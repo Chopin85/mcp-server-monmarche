@@ -25,6 +25,10 @@ const getProductsSchema = z.object({
   name: z.string().describe("Products name to search in the grocery store"),
 });
 
+const addProductsSchema = z.object({
+  name: z.string().describe("Products name to search in the grocery store"),
+});
+
 // Register tools
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
@@ -136,7 +140,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   if (request.params.name === "add_product") {
     try {
       // Parse and validate arguments using zod
-      const args = getProductsSchema.parse(request.params.arguments);
+      const args = addProductsSchema.parse(request.params.arguments);
 
       const response = await addProduct(args.name);
 

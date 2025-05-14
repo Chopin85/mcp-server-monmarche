@@ -167,9 +167,9 @@ const cmd = process.argv[2] as keyof typeof commands;
     if (typeof result === "function") {
       const response = await result();
       console.log(response);
+    } else {
+      console.log(`Command "${cmd}" not recognized.`);
+      console.log("Available commands:", Object.keys(commands).join(", "));
     }
-  } else {
-    console.log(`Command "${cmd}" not recognized.`);
-    console.log("Available commands:", Object.keys(commands).join(", "));
   }
 })();
