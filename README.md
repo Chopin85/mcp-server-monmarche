@@ -141,7 +141,9 @@ npx @modelcontextprotocol/inspector node build/index.js
 
 ### Debugging
 
-To debug the Playwright browser, set `headless: false` in the Playwright launch options in monmarche.ts.
+```bash
+HEADLESS=false npx @modelcontextprotocol/inspector node build/index.js
+```
 
 ## Known Issues
 

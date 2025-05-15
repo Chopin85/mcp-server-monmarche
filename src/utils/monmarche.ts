@@ -18,7 +18,7 @@ const filePath = path.join(
 );
 
 // login function
-export const loginSession = async () => {
+const loginSession = async () => {
   const email = process.env.MON_MARCHE_EMAIL;
   const password = process.env.MON_MARCHE_PASSWORD;
 
@@ -26,7 +26,9 @@ export const loginSession = async () => {
     return { error: "Email or password not set" };
   }
 
-  browser = await chromium.launch({ headless: false });
+  browser = await chromium.launch({
+    headless: process.env.HEADLESS === "false" ? false : true,
+  });
   const context = await browser.newContext();
   page = await context.newPage();
 
@@ -72,7 +74,9 @@ export const searchProducts = async (product: string) => {
 
   const sessionCookie = JSON.parse(readFileSync(filePath, "utf-8"));
 
-  const browser = await chromium.launch({ headless: false });
+  browser = await chromium.launch({
+    headless: process.env.HEADLESS === "false" ? false : true,
+  });
   const context = await browser.newContext();
 
   await context.addCookies(
@@ -90,7 +94,7 @@ export const searchProducts = async (product: string) => {
 
   try {
     const articles = page.locator(
-      '//*[@id="__next"]/div[4]/div/div[2]/div[1]/div'
+      'xpath=//*[@id="__next"]/div[5]/div/div[2]/div[1]/div'
     );
 
     const articlesfilter = articles.locator('article:has-text("€")');
@@ -99,19 +103,16 @@ export const searchProducts = async (product: string) => {
       (await articlesfilter.count()) >= 5 ? 5 : await articlesfilter.count();
 
     const products = [];
+
     for (let i = 0; i < count; i++) {
       const article = articlesfilter.nth(i);
-
       const name = await article
-        .locator('a[href^="/produit"] >> div')
+        .locator('a[href^="/produit"] div')
         .first()
         .innerText();
-
       const price = await article.locator('p:has-text("€")').last().innerText();
-
       products.push({ name: name.trim(), price: price.trim() });
     }
-
     return products;
   } catch (err) {
     console.error("Error in /products:", err);
@@ -129,7 +130,9 @@ export const addProduct = async (product: string) => {
 
   const sessionCookie = JSON.parse(readFileSync(filePath, "utf-8"));
 
-  const browser = await chromium.launch({ headless: false });
+  browser = await chromium.launch({
+    headless: process.env.HEADLESS === "false" ? false : true,
+  });
   const context = await browser.newContext();
 
   await context.addCookies(
@@ -147,7 +150,7 @@ export const addProduct = async (product: string) => {
     await page.click("text=Ajouter");
     await page.waitForTimeout(2000);
 
-    ({ status: `product "${product}" added to cart` });
+    return `product "${product}" added to cart`;
   } catch (err) {
     ({ error: "Error while adding", details: err });
   } finally {
@@ -157,6 +160,8 @@ export const addProduct = async (product: string) => {
 
 const commands = {
   loginSession,
+  searchProducts,
+  addProduct,
 };
 
 const cmd = process.argv[2] as keyof typeof commands;
@@ -165,7 +170,17 @@ const cmd = process.argv[2] as keyof typeof commands;
   if (cmd in commands) {
     const result = await commands[cmd];
     if (typeof result === "function") {
-      const response = await result();
+      let response;
+      if (cmd === "loginSession") {
+        console.log("Logging in...");
+        response = await loginSession();
+      } else if (cmd === "searchProducts") {
+        console.log(`Searching for products...`);
+        response = await searchProducts(process.argv[3]);
+      } else if (cmd === "addProduct") {
+        console.log(`Adding product...`);
+        response = await addProduct(process.argv[3]);
+      }
       console.log(response);
     } else {
       console.log(`Command "${cmd}" not recognized.`);

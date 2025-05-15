@@ -26,7 +26,7 @@ const getProductsSchema = z.object({
 });
 
 const addProductsSchema = z.object({
-  name: z.string().describe("Products name to search in the grocery store"),
+  name: z.string().describe("Products name to add to store card"),
 });
 
 // Register tools
@@ -66,12 +66,12 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 });
 
 // Helper function to format a product recipe nicely
-function formatProduct(product: any) {
+function formatProduct(product: { name: string; price: string }) {
   return `
-🍸 ${product.name} 🍸
 -----------------
 Name: ${product.name}
 Price ${product.price}
+-------------------
   `;
 }
 
@@ -90,25 +90,24 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       const data = response;
 
-      // Check if any drinks were found
-      if (!data) {
+      // Check if any products were found
+      if (!Array.isArray(data) || data.length === 0) {
         return {
           content: [
             {
               type: "text",
-              text: `No  found matching "${args.name}". Try a different search term.`,
+              text: `No products found matching "${args.name}". Try a different search term.`,
             },
           ],
         };
       }
 
       // Format each product recipe
-
       const productResult = Array.isArray(data) ? data.map(formatProduct) : [];
 
       // Create the formatted response
       const result = `
-        Found ${data} product(s) matching 
+        Found ${data.length} product(s) matching
         "${args.name}":\n\n${productResult.join("\n\n")}
       `;
 
@@ -162,15 +161,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
 
-      // Format each product recipe
-
-      const productResult = Array.isArray(data) ? data.map(formatProduct) : [];
-
       // Create the formatted response
-      const result = `
-        Found ${data} product(s) and added to cart 
-        "${args.name}":\n\n${productResult.join("\n\n")}
-      `;
+      const result = `Found "${args.name}" and added to cart`;
 
       return {
         content: [
