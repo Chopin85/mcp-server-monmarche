@@ -1,4 +1,4 @@
-# My MCP Server
+# MPC SERVER MON MARCHE
 
 This project is a Model Context Protocol (MCP) server for interacting with the [Mon Marché](https://www.mon-marche.fr/) french grocery store website. It provides tools to search for products and add them to a cart using a command-line interface.
 
