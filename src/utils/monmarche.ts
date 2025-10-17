@@ -1,13 +1,12 @@
-import { chromium } from "playwright";
+import { chromium, Browser, Page } from "playwright";
 import { writeFileSync, existsSync, readFileSync } from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
-let browser;
-let page: any;
+let browser: Browser | null = null;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -17,8 +16,30 @@ const filePath = path.join(
   "session-cookie.json"
 );
 
-// login function
-const loginSession = async () => {
+/** --- Browser Manager --- **/
+async function getBrowser(): Promise<Browser> {
+  if (!browser) {
+    browser = await chromium.launch({
+      headless: process.env.HEADLESS !== "false",
+    });
+  }
+  return browser;
+}
+
+async function newPageWithCookies(): Promise<Page> {
+  const browser = await getBrowser();
+  const context = await browser.newContext();
+
+  if (existsSync(filePath)) {
+    const cookies = JSON.parse(readFileSync(filePath, "utf-8"));
+    await context.addCookies(cookies);
+  }
+
+  return await context.newPage();
+}
+
+/** --- Login --- **/
+export const loginSession = async () => {
   const email = process.env.MON_MARCHE_EMAIL;
   const password = process.env.MON_MARCHE_PASSWORD;
 
@@ -26,165 +47,138 @@ const loginSession = async () => {
     return { error: "Email or password not set" };
   }
 
-  browser = await chromium.launch({
-    headless: process.env.HEADLESS === "false" ? false : true,
+  const browser = await getBrowser();
+  const context = await browser.newContext({
+    userAgent:
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
   });
-  const context = await browser.newContext();
-  page = await context.newPage();
+  const page = await context.newPage();
 
   try {
-    await page.goto("https://www.mon-marche.fr/");
-    await page.click("button[id='didomi-notice-agree-button']");
+    await page.goto("https://www.mon-marche.fr/", {
+      waitUntil: "domcontentloaded",
+    });
+    await page
+      .click("#didomi-notice-agree-button", { timeout: 3000 })
+      .catch(() => {});
     await page.click('button[title="Mon compte"]');
     await page.fill('input[name="email"]', email);
     await page.fill('input[name="password"]', password);
     await page.click('button[type="submit"]');
-
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(3000);
 
     const cookies = await context.cookies();
+    const wantedCookies = cookies.filter((c) =>
+      ["session", "didomi_token"].includes(c.name)
+    );
 
-    const sessionCookie = cookies.find((c) => c.name === "session");
-    const didomiToken = cookies.find((c) => c.name === "didomi_token");
-
-    if (sessionCookie) {
-      writeFileSync(
-        filePath,
-        JSON.stringify(
-          [sessionCookie, didomiToken].map((cookie) => cookie),
-          null,
-          2
-        )
-      );
-    }
-
+    writeFileSync(filePath, JSON.stringify(wantedCookies, null, 2));
     return { status: "Login OK" };
   } catch (err) {
-    return { error: "Errore durante il login", details: err };
+    console.error("Login error:", err);
+    return { error: "Errore durante il login", details: String(err) };
   } finally {
-    browser.close();
+    await context.close();
   }
 };
 
-// stdio searchProducts
+/** --- Search products --- **/
 export const searchProducts = async (product: string) => {
   if (!existsSync(filePath)) {
     return { error: "You have to log in first" };
   }
 
-  const sessionCookie = JSON.parse(readFileSync(filePath, "utf-8"));
-
-  browser = await chromium.launch({
-    headless: process.env.HEADLESS === "false" ? false : true,
-  });
-  const context = await browser.newContext();
-
-  await context.addCookies(
-    sessionCookie.map((cookie: any) => ({
-      ...cookie,
-    }))
-  );
-
-  const page = await context.newPage();
-  await page.goto(
-    encodeURI(`https://www.mon-marche.fr/recherche?term=${product}`)
-  );
-
-  await page.waitForTimeout(2000); // aspetta un attimo per essere sicuri che la pagina sia caricata
-
+  const page = await newPageWithCookies();
   try {
-    const articles = page.locator(
-      'xpath=//*[@id="__next"]/div[5]/div/div[2]/div[1]/div'
+    await page.goto(
+      `https://www.mon-marche.fr/recherche?term=${encodeURIComponent(product)}`,
+      {
+        waitUntil: "domcontentloaded",
+        timeout: 30000,
+      }
     );
 
-    const articlesfilter = articles.locator('article:has-text("€")');
+    await page.waitForSelector("article", { timeout: 10000 });
 
-    const count =
-      (await articlesfilter.count()) >= 5 ? 5 : await articlesfilter.count();
+    const productLinks: string[] = await page.$$eval(
+      "article a[href^='/produit/']",
+      (links) => links.slice(0, 5).map((a) => (a as HTMLAnchorElement).href)
+    );
 
-    const products = [];
+    const scrapeProduct = async (link: string) => {
+      const browserInstance = await getBrowser();
+      const productPage = await browserInstance.newPage();
+      await productPage.goto(link, { waitUntil: "domcontentloaded" });
 
-    for (let i = 0; i < count; i++) {
-      const article = articlesfilter.nth(i);
-      const name = await article
-        .locator('a[href^="/produit"] div')
-        .first()
-        .innerText();
-      const price = await article.locator('p:has-text("€")').last().innerText();
-      products.push({ name: name.trim(), price: price.trim() });
-    }
+      const product = await productPage.evaluate(() => {
+        const nameEl = document.querySelector("h1");
+        const name = nameEl?.textContent?.trim() || null;
+
+        const priceEl = Array.from(document.querySelectorAll("span")).find(
+          (s) => s.textContent?.includes("€")
+        );
+        const price = priceEl?.textContent?.trim() || null;
+
+        let description = null;
+        const h2s = Array.from(document.querySelectorAll("h2"));
+        const descHeader = h2s.find((h) =>
+          h.textContent?.toLowerCase().includes("description")
+        );
+        if (descHeader) {
+          const nextDiv = descHeader.nextElementSibling;
+          if (nextDiv) description = nextDiv.textContent?.trim() || null;
+        }
+
+        return { name, price, description, link: window.location.href };
+      });
+
+      await productPage.close();
+      return product;
+    };
+
+    const products = await Promise.all(productLinks.map(scrapeProduct));
+
     return products;
   } catch (err) {
-    console.error("Error in /products:", err);
-    return { error: "Failed to fetch products", details: err };
+    console.error("Error searching product:", err);
+    return { error: "Failed to fetch products", details: String(err) };
   } finally {
-    if (browser) await browser.close();
+    await page.context().close();
   }
 };
 
-// stdio addProduct
-export const addProduct = async (product: string) => {
+/** --- Add product --- **/
+export const addProduct = async ({
+  url,
+  name,
+  quantity,
+}: {
+  url?: string;
+  name: string;
+  quantity: number;
+}) => {
   if (!existsSync(filePath)) {
     return { error: "You have to log in first" };
   }
 
-  const sessionCookie = JSON.parse(readFileSync(filePath, "utf-8"));
-
-  browser = await chromium.launch({
-    headless: process.env.HEADLESS === "false" ? false : true,
-  });
-  const context = await browser.newContext();
-
-  await context.addCookies(
-    sessionCookie.map((cookie: any) => ({
-      ...cookie,
-    }))
-  );
-
-  const page = await context.newPage();
-  await page.goto(`https://www.mon-marche.fr/recherche?term=${product}`);
-
+  const page = await newPageWithCookies();
   try {
+    await page.goto(
+      url ||
+        `https://www.mon-marche.fr/recherche?term=${encodeURIComponent(name)}`,
+      { waitUntil: "domcontentloaded", timeout: 60000 }
+    );
     await page.waitForTimeout(2000);
+
     await page.click("article");
     await page.click("text=Ajouter");
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(1500);
 
-    return `product "${product}" added to cart`;
+    return { status: `Product "${name}" added to cart` };
   } catch (err) {
-    ({ error: "Error while adding", details: err });
+    console.error("Add product error:", err);
+    return { error: "Error while adding product", details: String(err) };
   } finally {
-    await browser.close();
+    await page.context().close();
   }
 };
-
-const commands = {
-  loginSession,
-  searchProducts,
-  addProduct,
-};
-
-const cmd = process.argv[2] as keyof typeof commands;
-
-(async () => {
-  if (cmd in commands) {
-    const result = await commands[cmd];
-    if (typeof result === "function") {
-      let response;
-      if (cmd === "loginSession") {
-        console.log("Logging in...");
-        response = await loginSession();
-      } else if (cmd === "searchProducts") {
-        console.log(`Searching for products...`);
-        response = await searchProducts(process.argv[3]);
-      } else if (cmd === "addProduct") {
-        console.log(`Adding product...`);
-        response = await addProduct(process.argv[3]);
-      }
-      console.log(response);
-    } else {
-      console.log(`Command "${cmd}" not recognized.`);
-      console.log("Available commands:", Object.keys(commands).join(", "));
-    }
-  }
-})();

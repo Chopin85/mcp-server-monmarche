@@ -1,97 +1,45 @@
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-} from "@modelcontextprotocol/sdk/types.js";
-import z from "zod";
+import { z } from "zod";
 import { addProduct, searchProducts } from "./utils/monmarche.js";
 
-// Create the server
-const server = new Server(
+// Create an MCP server
+const server = new McpServer({
+  name: "monmarche-server",
+  version: "1.0.0",
+});
+
+// Tool searchProduct
+server.registerTool(
+  "searchProduct",
   {
-    name: "product-api-server",
-    version: "1.0.0",
-  },
-  {
-    capabilities: {
-      tools: {},
+    title: "Search Product",
+    description: "Search for a product on Mon Marché",
+    inputSchema: {
+      query: z.object({
+        name: z
+          .string()
+          .min(1)
+          .max(100)
+          .describe("Name of the product to search"),
+      }),
     },
-  }
-);
-
-// Define tool schema using zod
-const getProductsSchema = z.object({
-  name: z.string().describe("Products name to search in the grocery store"),
-});
-
-const addProductsSchema = z.object({
-  name: z.string().describe("Products name to add to store card"),
-});
-
-// Register tools
-server.setRequestHandler(ListToolsRequestSchema, async () => {
-  return {
-    tools: [
-      {
-        name: "get_products",
-        description: "Search for product by name",
-        inputSchema: {
-          type: "object",
-          properties: {
-            name: {
-              type: "string",
-              description: "Product name to search for",
-            },
-          },
-          required: ["name"],
-        },
-      },
-      {
-        name: "add_product",
-        description: "Find product by name and add to cart",
-        inputSchema: {
-          type: "object",
-          properties: {
-            name: {
-              type: "string",
-              description: "Product name to find for add to cart",
-            },
-          },
-          required: ["name"],
-        },
-      },
-    ],
-  };
-});
-
-// Helper function to format a product recipe nicely
-function formatProduct(product: { name: string; price: string }) {
-  return `
------------------
-Name: ${product.name}
-Price ${product.price}
--------------------
-  `;
-}
-
-// Implement the tool handler
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  if (request.params.name === "get_products") {
+  },
+  async ({ query }) => {
     try {
-      // Parse and validate arguments using zod
-      const args = getProductsSchema.parse(request.params.arguments);
+      const args = z
+        .object({
+          name: z
+            .string()
+            .min(1)
+            .max(100)
+            .describe("Name of the product to search"),
+        })
+        .parse(query);
 
-      const response = await searchProducts(args.name);
+      const products = await searchProducts(args.name);
 
-      if (!response) {
-        throw new Error(`Products API error: ${response}`);
-      }
-
-      const data = response;
-
-      // Check if any products were found
-      if (!Array.isArray(data) || data.length === 0) {
+      if (!Array.isArray(products) || products.length === 0) {
         return {
           content: [
             {
@@ -102,25 +50,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
 
-      // Format each product recipe
-      const productResult = Array.isArray(data) ? data.map(formatProduct) : [];
-
-      // Create the formatted response
-      const result = `
-        Found ${data.length} product(s) matching
-        "${args.name}":\n\n${productResult.join("\n\n")}
-      `;
+      const filteredProducts = products.filter((p) => p.name && p.price);
 
       return {
         content: [
           {
             type: "text",
-            text: result,
+            text: JSON.stringify(filteredProducts, null, 2),
           },
         ],
       };
     } catch (error) {
-      console.error("Error in get_product tool:", error);
+      console.error("Error in searchProduct tool:", error);
 
       return {
         isError: true,
@@ -135,80 +76,81 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
     }
   }
+);
 
-  if (request.params.name === "add_product") {
+// Tool addProduct
+server.registerTool(
+  "addProduct",
+  {
+    title: "Add Product",
+    description: "Add a product to the Mon Marché shopping cart",
+    inputSchema: {
+      product: z.object({
+        name: z.string().describe("Name of the product to add"),
+        quantity: z
+          .number()
+          .min(1)
+          .max(100)
+          .describe("Quantity of the product to add"),
+      }),
+    },
+  },
+  async ({ product }) => {
+    const { url, name, quantity } = z
+      .object({
+        url: z.string().url().optional().describe("URL of the product to add"),
+        name: z
+          .string()
+          .min(1)
+          .max(100)
+          .describe("Name of the product to search"),
+        quantity: z
+          .number()
+          .min(1)
+          .max(100)
+          .describe("Quantity of the product to add"),
+      })
+      .parse(product);
+
     try {
-      // Parse and validate arguments using zod
-      const args = addProductsSchema.parse(request.params.arguments);
-
-      const response = await addProduct(args.name);
-
-      if (!response) {
-        throw new Error(`Products API error: ${response}`);
-      }
-
-      const data = response;
-
-      // Check if any drinks were found
-      if (!data) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `No add to cart"${args.name}". Try a different search term.`,
-            },
-          ],
-        };
-      }
-
-      // Create the formatted response
-      const result = `Found "${args.name}" and added to cart`;
-
-      return {
-        content: [
-          {
-            type: "text",
-            text: result,
-          },
-        ],
-      };
+      const productAdd = await addProduct({ url, name, quantity });
     } catch (error) {
-      console.error("Error in get_product tool:", error);
-
+      console.error("Error adding product:", error);
       return {
         isError: true,
         content: [
           {
             type: "text",
-            text: `Error searching for product: ${
+            text: `Error adding product: ${
               error instanceof Error ? error.message : "Unknown error"
             }`,
           },
         ],
       };
     }
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Product added to cart: ${JSON.stringify(product)}`,
+        },
+      ],
+    };
   }
+);
 
-  // Handle unknown tool
-  return {
-    isError: true,
-    content: [
-      {
-        type: "text",
-        text: `Unknown tool: ${request.params.name}`,
-      },
-    ],
-  };
-});
+// Start receiving messages on stdin and sending messages on stdout
+const transport = new StdioServerTransport();
+await server.connect(transport);
 
-// Connect the transport
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("product API server running on stdio");
+  console.error("✅ MCP server running on stdio");
 }
 
-main().catch((err) => {
-  console.error("Fatal error:", err);
+main().catch((e) => {
+  console.error("Fatal error:", e);
   process.exit(1);
 });
