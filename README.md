@@ -6,13 +6,14 @@ This project is a Model Context Protocol (MCP) server for interacting with the [
 
 - **Search Products**: Search for products by name on the Mon Marché website.
 - **Add Products to Cart**: Add products to your cart by specifying their name.
+- **Check Cart**: Check the products on your cart.
+- **Clear Cart**: Remove all products from your cart.
 - **Session Management**: Automatically logs in and manages session cookies for interacting with the website.
 
 ## Prerequisites
 
 - Node.js (v16 or higher)
 - npm or yarn
-- Playwright (installed automatically as a dependency)
 - A Mon Marché account with valid credentials
 
 ## Installation
@@ -83,26 +84,29 @@ The server will start and listen for requests via the standard input/output (std
 
 #### Search Products
 
-Use the `get_products` tool to search for products by name:
+Use the `searchProduct` tool to search for products by name:
 
 ```json
 {
-  "name": "get_products",
-  "arguments": {
-    "name": "apple"
+  "name": "searchProduct",
+  "query": {
+    "name": "pomme"
   }
 }
 ```
 
 #### Add Products to Cart
 
-Use the `add_product` tool to add a product to your cart:
+Use the `addProduct` tool to add a product to your cart:
 
 ```json
 {
-  "name": "add_product",
+  "name": "addProduct",
   "arguments": {
-    "name": "apple"
+    "product": {
+      "id": "VwsP7FRQ7",
+      "quantity": 6
+    }
   }
 }
 ```
@@ -112,6 +116,10 @@ Use the `add_product` tool to add a product to your cart:
 You can also run commands directly thefrom CLI:
 
 - **Login**: `npm run login`
+- **SearchProducts**: `npm run searchProducts pomme`
+- **AddProduct**: `npm run addProduct -- --id VwsP7FRQ7 --quantity 6`
+- **GetCartList**: `npm run getCartList`
+- **CleartCart**: `npm run clearCart`
 
 ## Project Structure
 

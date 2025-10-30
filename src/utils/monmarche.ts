@@ -1,42 +1,93 @@
-import { chromium, Browser, Page } from "playwright";
 import { writeFileSync, existsSync, readFileSync } from "fs";
 import path from "path";
-import { fileURLToPath } from "url";
 import dotenv from "dotenv";
+import { fileURLToPath } from "url";
+import {
+  ProductSearchResponse,
+  AddToCartResponse,
+  ArticleDetailResponse,
+  CartResponse,
+} from "../types/index.js";
 
 dotenv.config({ quiet: true });
 
-let browser: Browser | null = null;
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
 const filePath = path.join(
-  __dirname.replace("build/utils", ""),
+  __dirname.replace("dist/utils", ""),
   "session-cookie.json"
 );
+/** --- API URL --- **/
+const apiUrl = "https://www.mon-marche.fr/api";
 
-/** --- Browser Manager --- **/
-async function getBrowser(): Promise<Browser> {
-  if (!browser) {
-    browser = await chromium.launch({
-      headless: process.env.HEADLESS !== "false",
+/** --- Fetch Wrapper --- **/
+const apiCall = async <T>({
+  endpoint,
+  body,
+  method,
+  isLogin = false,
+}: {
+  endpoint: string;
+  body?: string;
+  method: "GET" | "POST" | "PATCH" | "DELETE";
+  isLogin?: boolean;
+}): Promise<T> => {
+  let session: string | undefined;
+
+  if (!isLogin) {
+    session = JSON.parse(readFileSync(filePath, "utf-8")).session;
+  }
+
+  const cookie = !isLogin && session ? `session=${session};` : "";
+
+  try {
+    const response = await fetch(`${apiUrl}${endpoint}`, {
+      headers: {
+        accept: "*/*",
+        "accept-language": "fr,it;q=0.9,en;q=0.8",
+        "cache-control": "no-cache",
+        "content-type": "application/json",
+        pragma: "no-cache",
+        priority: "u=1, i",
+        "sec-ch-ua":
+          '"Google Chrome";v="141", "Not?A_Brand";v="8", "Chromium";v="141"',
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": '"macOS"',
+        "sec-fetch-dest": "empty",
+        "sec-fetch-mode": "cors",
+        "sec-fetch-site": "same-origin",
+        cookie,
+        Referer: "https://www.mon-marche.fr/",
+      },
+      body,
+      method,
     });
+
+    if (isLogin) {
+      const setCookie = response.headers.get("set-cookie");
+      if (setCookie) {
+        const cookies = setCookie.split(",").map((cookie) => cookie.trim());
+        const sessionCookie = cookies.find((cookie) =>
+          cookie.startsWith("session=")
+        );
+        if (sessionCookie) {
+          const session = sessionCookie.split(";")[0].replace("session=", "");
+          const newCookies = { session };
+
+          console.log(newCookies);
+
+          writeFileSync(filePath, JSON.stringify(newCookies, null, 2), "utf-8");
+        }
+      }
+    }
+
+    const data: T = await response.json();
+    return data;
+  } catch (err) {
+    console.error("API call error:", err);
+    throw err;
   }
-  return browser;
-}
-
-async function newPageWithCookies(): Promise<Page> {
-  const browser = await getBrowser();
-  const context = await browser.newContext();
-
-  if (existsSync(filePath)) {
-    const cookies = JSON.parse(readFileSync(filePath, "utf-8"));
-    await context.addCookies(cookies);
-  }
-
-  return await context.newPage();
-}
+};
 
 /** --- Login --- **/
 export const loginSession = async () => {
@@ -47,38 +98,21 @@ export const loginSession = async () => {
     return { error: "Email or password not set" };
   }
 
-  const browser = await getBrowser();
-  const context = await browser.newContext({
-    userAgent:
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
-  });
-  const page = await context.newPage();
-
   try {
-    await page.goto("https://www.mon-marche.fr/", {
-      waitUntil: "domcontentloaded",
+    const loginResponse = await apiCall<any>({
+      endpoint: "/auth/signin",
+      body: `{"email":"${email}","password":"${password}"}`,
+      method: "POST",
+      isLogin: true,
     });
-    await page
-      .click("#didomi-notice-agree-button", { timeout: 3000 })
-      .catch(() => {});
-    await page.click('button[title="Mon compte"]');
-    await page.fill('input[name="email"]', email);
-    await page.fill('input[name="password"]', password);
-    await page.click('button[type="submit"]');
-    await page.waitForTimeout(3000);
 
-    const cookies = await context.cookies();
-    const wantedCookies = cookies.filter((c) =>
-      ["session", "didomi_token"].includes(c.name)
-    );
+    if (loginResponse.error) {
+      return { error: loginResponse.error, message: loginResponse.message };
+    }
 
-    writeFileSync(filePath, JSON.stringify(wantedCookies, null, 2));
     return { status: "Login OK" };
-  } catch (err) {
-    console.error("Login error:", err);
-    return { error: "Errore durante il login", details: String(err) };
-  } finally {
-    await context.close();
+  } catch (error) {
+    return { error: "Error logging in" };
   }
 };
 
@@ -88,97 +122,114 @@ export const searchProducts = async (product: string) => {
     return { error: "You have to log in first" };
   }
 
-  const page = await newPageWithCookies();
-  try {
-    await page.goto(
-      `https://www.mon-marche.fr/recherche?term=${encodeURIComponent(product)}`,
-      {
-        waitUntil: "domcontentloaded",
-        timeout: 30000,
-      }
-    );
+  const productsResponse = await apiCall<ProductSearchResponse>({
+    endpoint: `/search2?type=PRODUCT&text=${encodeURIComponent(
+      product
+    )}&modelVersion=ordinal_df`,
+    method: "GET",
+  });
+  if (!productsResponse) {
+    throw new Error(`Failed to search products: ${productsResponse}`);
+  }
+  const data = await productsResponse;
 
-    await page.waitForSelector("article", { timeout: 10000 });
-
-    const productLinks: string[] = await page.$$eval(
-      "article a[href^='/produit/']",
-      (links) => links.slice(0, 5).map((a) => (a as HTMLAnchorElement).href)
-    );
-
-    const scrapeProduct = async (link: string) => {
-      const browserInstance = await getBrowser();
-      const productPage = await browserInstance.newPage();
-      await productPage.goto(link, { waitUntil: "domcontentloaded" });
-
-      const product = await productPage.evaluate(() => {
-        const nameEl = document.querySelector("h1");
-        const name = nameEl?.textContent?.trim() || null;
-
-        const priceEl = Array.from(document.querySelectorAll("span")).find(
-          (s) => s.textContent?.includes("€")
-        );
-        const price = priceEl?.textContent?.trim() || null;
-
-        let description = null;
-        const h2s = Array.from(document.querySelectorAll("h2"));
-        const descHeader = h2s.find((h) =>
-          h.textContent?.toLowerCase().includes("description")
-        );
-        if (descHeader) {
-          const nextDiv = descHeader.nextElementSibling;
-          if (nextDiv) description = nextDiv.textContent?.trim() || null;
-        }
-
-        return { name, price, description, link: window.location.href };
+  const products = await Promise.all(
+    data.items.map(async (item) => {
+      const res = await apiCall<ArticleDetailResponse>({
+        endpoint: `/articleDetailBySlug/${item.slug}`,
+        method: "GET",
       });
 
-      await productPage.close();
-      return product;
-    };
+      const name = res.name || null;
+      const id = res.id || null;
+      const weight =
+        res.weightPrice && res.weightPrice.weight
+          ? `${res.weightPrice.weight} ${res.weightPrice.unit}`
+          : null;
+      const price = res.pricing.sellPrices.perPiece
+        ? `${res.pricing.sellPrices.perPiece.net / 100} €`
+        : null;
+      const priceKg = res.pricing.sellPrices.perWeightUnit
+        ? `${res.pricing.sellPrices.perWeightUnit.net / 100} € / kg`
+        : null;
+      const description = res.description || null;
+      const link = `https://www.mon-marche.fr/produit/${item.slug}`;
 
-    const products = await Promise.all(productLinks.map(scrapeProduct));
-
-    return products;
-  } catch (err) {
-    console.error("Error searching product:", err);
-    return { error: "Failed to fetch products", details: String(err) };
-  } finally {
-    await page.context().close();
-  }
+      return {
+        name,
+        id,
+        weight,
+        price,
+        priceKg,
+        description,
+        link,
+      };
+    })
+  );
+  return products;
 };
 
 /** --- Add product --- **/
 export const addProduct = async ({
-  url,
-  name,
+  id,
   quantity,
 }: {
-  url?: string;
-  name: string;
+  id: string;
   quantity: number;
 }) => {
   if (!existsSync(filePath)) {
     return { error: "You have to log in first" };
   }
 
-  const page = await newPageWithCookies();
-  try {
-    await page.goto(
-      url ||
-        `https://www.mon-marche.fr/recherche?term=${encodeURIComponent(name)}`,
-      { waitUntil: "domcontentloaded", timeout: 60000 }
-    );
-    await page.waitForTimeout(2000);
-
-    await page.click("article");
-    await page.click("text=Ajouter");
-    await page.waitForTimeout(1500);
-
-    return { status: `Product "${name}" added to cart` };
-  } catch (err) {
-    console.error("Add product error:", err);
-    return { error: "Error while adding product", details: String(err) };
-  } finally {
-    await page.context().close();
+  const addProductResponse = await apiCall<AddToCartResponse>({
+    endpoint: "/cart/product",
+    body: `{"product":{"id":"${id}","quantity":${quantity}}}`,
+    method: "PATCH",
+  });
+  if (!addProductResponse) {
+    throw new Error(`Failed to add product: ${addProductResponse}`);
   }
+  return addProductResponse;
+};
+
+/** --- Cart list --- **/
+export const getCartList = async () => {
+  if (!existsSync(filePath)) {
+    return { error: "You have to log in first" };
+  }
+
+  const cartResponse = await apiCall<CartResponse>({
+    endpoint: "/cart",
+    method: "GET",
+  });
+
+  if (!cartResponse) {
+    throw new Error(`Failed to get cart: ${cartResponse}`);
+  }
+  return cartResponse.products.map((product) => ({
+    name: product.name,
+    id: product.id,
+    quantity: product.quotation.count,
+    price: `${
+      (product.pricing.sellPrices.perPiece.net / 100) * product.quotation.count
+    } €`,
+    link: `https://www.mon-marche.fr/produit/${product.slug}`,
+  }));
+};
+
+/** --- Clear cart --- **/
+export const clearCart = async () => {
+  if (!existsSync(filePath)) {
+    return { error: "You have to log in first" };
+  }
+
+  const clearCartResponse = await apiCall<CartResponse>({
+    endpoint: "/cart",
+    method: "DELETE",
+  });
+
+  if (!clearCartResponse) {
+    throw new Error(`Failed to clear cart: ${clearCartResponse}`);
+  }
+  return { status: "Cart cleared" };
 };

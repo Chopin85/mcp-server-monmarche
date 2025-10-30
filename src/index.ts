@@ -1,7 +1,12 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { addProduct, searchProducts } from "./utils/monmarche.js";
+import {
+  addProduct,
+  searchProducts,
+  getCartList,
+  clearCart,
+} from "./utils/monmarche.js";
 
 // Create an MCP server
 const server = new McpServer({
@@ -50,7 +55,7 @@ server.registerTool(
         };
       }
 
-      const filteredProducts = products.filter((p) => p.name && p.price);
+      const filteredProducts = products.filter((p) => p.name);
 
       return {
         content: [
@@ -86,34 +91,21 @@ server.registerTool(
     description: "Add a product to the Mon Marché shopping cart",
     inputSchema: {
       product: z.object({
-        name: z.string().describe("Name of the product to add"),
-        quantity: z
-          .number()
-          .min(1)
-          .max(100)
-          .describe("Quantity of the product to add"),
+        id: z.string().describe("ID of the product to add"),
+        quantity: z.number().min(1).describe("Quantity of the product to add"),
       }),
     },
   },
   async ({ product }) => {
-    const { url, name, quantity } = z
+    const { id, quantity } = z
       .object({
-        url: z.string().url().optional().describe("URL of the product to add"),
-        name: z
-          .string()
-          .min(1)
-          .max(100)
-          .describe("Name of the product to search"),
-        quantity: z
-          .number()
-          .min(1)
-          .max(100)
-          .describe("Quantity of the product to add"),
+        id: z.string().describe("ID of the product to add"),
+        quantity: z.number().min(1).describe("Quantity of the product to add"),
       })
       .parse(product);
 
     try {
-      const productAdd = await addProduct({ url, name, quantity });
+      const result = await addProduct({ id, quantity });
     } catch (error) {
       console.error("Error adding product:", error);
       return {
@@ -140,9 +132,93 @@ server.registerTool(
   }
 );
 
-// Start receiving messages on stdin and sending messages on stdout
-const transport = new StdioServerTransport();
-await server.connect(transport);
+// Tool getCartList
+server.registerTool(
+  "getCartList",
+  {
+    title: "Get Cart List",
+    description:
+      "Retrieve the list of products in the Mon Marché shopping cart",
+    inputSchema: {},
+  },
+  async () => {
+    try {
+      const cartItems = await getCartList();
+
+      if (!Array.isArray(cartItems) || cartItems.length === 0) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Your shopping cart is empty.",
+            },
+          ],
+        };
+      }
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(cartItems, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      console.error("Error retrieving cart list:", error);
+
+      return {
+        isError: true,
+        content: [
+          {
+            type: "text",
+            text: `Error retrieving cart list: ${
+              error instanceof Error ? error.message : "Unknown error"
+            }`,
+          },
+        ],
+      };
+    }
+  }
+);
+
+// Tool clearCart
+server.registerTool(
+  "clearCart",
+  {
+    title: "Clear Cart",
+    description: "Clear all products from the Mon Marché shopping cart",
+    inputSchema: {},
+  },
+  async () => {
+    try {
+      const result = await clearCart();
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Shopping cart cleared.`,
+          },
+        ],
+      };
+    } catch (error) {
+      console.error("Error clearing cart:", error);
+
+      return {
+        isError: true,
+        content: [
+          {
+            type: "text",
+            text: `Error clearing cart: ${
+              error instanceof Error ? error.message : "Unknown error"
+            }`,
+          },
+        ],
+      };
+    }
+  }
+);
 
 async function main() {
   const transport = new StdioServerTransport();
