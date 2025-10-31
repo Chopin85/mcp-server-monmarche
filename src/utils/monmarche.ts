@@ -131,10 +131,12 @@ export const searchProducts = async (product: string) => {
   if (!productsResponse) {
     throw new Error(`Failed to search products: ${productsResponse}`);
   }
-  const data = await productsResponse;
+  const items = productsResponse.items.filter(
+    (item) => item.availableQuantity > 0
+  );
 
   const products = await Promise.all(
-    data.items.map(async (item) => {
+    items.map(async (item) => {
       const res = await apiCall<ArticleDetailResponse>({
         endpoint: `/articleDetailBySlug/${item.slug}`,
         method: "GET",
