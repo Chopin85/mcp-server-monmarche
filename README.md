@@ -1,162 +1,120 @@
-# My MCP Server
+# Mon Marché MCP Server
 
-This project is a Model Context Protocol (MCP) server for interacting with the [Mon Marché](https://www.mon-marche.fr/) french grocery store website. It provides tools to search for products and add them to a cart using a command-line interface.
+A Model Context Protocol (MCP) server that connects LLMs to the [Mon Marché](https://www.mon-marche.fr/) French grocery store. This server enables AI assistants to search for products, manage a shopping cart, and interact with the Mon Marché platform.
 
 ## Features
 
-- **Search Products**: Search for products by name on the Mon Marché website.
-- **Add Products to Cart**: Add products to your cart by specifying their name.
-- **Check Cart**: Check the products on your cart.
-- **Clear Cart**: Remove all products from your cart.
-- **Session Management**: Automatically logs in and manages session cookies for interacting with the website.
+- **Product Search**: Find products by name.
+- **Cart Management**:
+  - Add items to cart.
+  - View current cart contents.
+  - Clear the entire cart.
+- **Session Handling**: Automated login and session persistence via cookies.
 
 ## Prerequisites
 
 - Node.js (v16 or higher)
 - npm or yarn
-- A Mon Marché account with valid credentials
+- A valid [Mon Marché](https://www.mon-marche.fr/) account
 
 ## Installation
 
-1. Clone the repository:
-
+1. **Clone the repository:**
    ```bash
    git clone https://github.com/Chopin85/mcp-server-monmarche
    cd mcp-server-monmarche
    ```
 
-2. Install dependencies:
-
+2. **Install dependencies:**
    ```bash
    npm install
    ```
 
-3. Create a `.env` file based on the `.env.example` file:
-
+3. **Configure Environment:**
+   Copy the example environment file and add your credentials:
    ```bash
    cp .env.example .env
    ```
-
-   Fill in your Mon Marché credentials:
-
+   Edit `.env` and fill in your details:
    ```env
    MON_MARCHE_EMAIL=your-email@example.com
    MON_MARCHE_PASSWORD=your-password
    ```
 
-4. Build the project:
-
+4. **Build the project:**
    ```bash
    npm run build
    ```
 
-## Usage
+## Configuration & Authentication
 
-### Build
+Before using the MCP server or tools, you must authenticate to generate a session.
 
-Before using the tools, you need build:
-
-```bash
-npm run build
-```
-
-### Login Session
-
-Before using the tools, you need to log in to Mon Marché:
-
+**Run the login script:**
 ```bash
 npm run login
 ```
+This command logs in using credentials from `.env` and saves the session cookies to `session-cookie.json`.
 
-This will save the session cookies to session-cookie.json.
+> [!IMPORTANT]
+> You must re-run `npm run login` if your session expires or if you delete `session-cookie.json`.
 
-### Start the Server
+## Usage
 
-Run the server:
+### Running the MCP Server
 
-```bash
-node build/index.js
-```
-
-The server will start and listen for requests via the standard input/output (stdio) transport.
-
-### Tools
-
-#### Search Products
-
-Use the `searchProduct` tool to search for products by name:
-
-```json
-{
-  "name": "searchProduct",
-  "query": {
-    "name": "pomme"
-  }
-}
-```
-
-#### Add Products to Cart
-
-Use the `addProduct` tool to add a product to your cart:
-
-```json
-{
-  "name": "addProduct",
-  "arguments": {
-    "product": {
-      "id": "VwsP7FRQ7",
-      "quantity": 6
-    }
-  }
-}
-```
-
-### Commands
-
-You can also run commands directly thefrom CLI:
-
-- **Login**: `npm run login`
-- **SearchProducts**: `npm run searchProducts pomme`
-- **AddProduct**: `npm run addProduct -- --id VwsP7FRQ7 --quantity 6`
-- **GetCartList**: `npm run getCartList`
-- **CleartCart**: `npm run clearCart`
-
-## Project Structure
-
-- index.ts: Main server implementation.
-- monmarche.ts: Utility functions for interacting with the Mon Marché website.
-- .env.example: Example environment variables file.
-- tsconfig.json: TypeScript configuration.
-- package.json: Project metadata and scripts.
-
-## Development
-
-### Build
-
-To compile the TypeScript code:
+To start the server for use with an MCP client (like Claude Desktop or an IDE extension):
 
 ```bash
-npm run build
+node dist/index.js
 ```
 
-### Run in Test Mode
+### Testing with MCP Inspector
 
-You can run the server directly using `@modelcontextprotocol/inspector`:
+You can test the tools interactively using the MCP Inspector:
 
 ```bash
-npx @modelcontextprotocol/inspector node build/index.js
+npx @modelcontextprotocol/inspector node dist/index.js
 ```
 
-### Debugging
+### CLI Tools
 
-```bash
-HEADLESS=false npx @modelcontextprotocol/inspector node build/index.js
-```
+The project includes helper scripts to run tools directly from the command line for testing or automation:
 
-## Known Issues
+- **Search**: `npm run searchProducts "pomme"`
+- **Add to Cart**: `npm run addProduct -- --id <PRODUCT_ID> --quantity <QTY>`
+- **View Cart**: `npm run getCartList`
+- **Clear Cart**: `npm run clearCart`
 
-- Ensure you have valid Mon Marché credentials in the .env file.
-- The session-cookie.json file must exist for the tools to work.
+## Available Tools
+
+The server exposes the following tools to MCP clients:
+
+### `searchProduct`
+Searches for products on Mon Marché.
+- **Input**: `{ "query": { "name": "string" } }`
+- **Returns**: List of matching products with IDs and details.
+
+### `addProduct`
+Adds a specific product to the cart.
+- **Input**: `{ "product": { "id": "string", "quantity": number } }`
+- **Returns**: Confirmation of addition.
+
+### `getCartList`
+Retrieves the current contents of the shopping cart.
+- **Input**: `{}` (No input required)
+- **Returns**: List of items in the cart.
+
+### `clearCart`
+Removes all items from the shopping cart.
+- **Input**: `{}` (No input required)
+- **Returns**: Confirmation message.
+
+## Troubleshooting
+
+- **Login Failed**: Ensure your email and password in `.env` are correct.
+- **Session Errors**: If tools return authentication errors, run `npm run login` to refresh your session cookies.
+- **Build Errors**: Make sure all dependencies are installed with `npm install`.
 
 ## License
 
