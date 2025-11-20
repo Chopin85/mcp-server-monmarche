@@ -918,3 +918,9 @@ export interface Fee {
 export interface Loyalty {
   points: number;
 }
+
+export interface LoginResponse {
+  error?: string;
+  message?: string;
+  status?: string;
+}

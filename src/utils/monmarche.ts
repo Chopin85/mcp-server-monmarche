@@ -1,24 +1,48 @@
 import { writeFileSync, existsSync, readFileSync } from "fs";
 import path from "path";
-import dotenv from "dotenv";
 import { fileURLToPath } from "url";
+import dotenv from "dotenv";
 import {
   ProductSearchResponse,
   AddToCartResponse,
   ArticleDetailResponse,
   CartResponse,
+  LoginResponse,
 } from "../types/index.js";
 
-dotenv.config({ quiet: true });
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const filePath = path.join(
-  __dirname.replace("dist/utils", ""),
-  "session-cookie.json"
-);
+
+const rootDir = path.resolve(__dirname, "../../");
+
+dotenv.config({ path: path.resolve(rootDir, ".env"), quiet: true });
+
+// Use __dirname to ensure we look for the file in the project root
+// regardless of where the script is run from
+const filePath = path.resolve(rootDir, "session-cookie.json");
+
+console.log(filePath);
+
 /** --- API URL --- **/
 const apiUrl = "https://www.mon-marche.fr/api";
+
+const DEFAULT_HEADERS = {
+  accept: "*/*",
+  "accept-language": "fr,it;q=0.9,en;q=0.8",
+  "cache-control": "no-cache",
+  "content-type": "application/json",
+  pragma: "no-cache",
+  priority: "u=1, i",
+  "sec-ch-ua":
+    '"Google Chrome";v="141", "Not?A_Brand";v="8", "Chromium";v="141"',
+  "sec-ch-ua-mobile": "?0",
+  "sec-ch-ua-platform": '"macOS"',
+  "sec-fetch-dest": "empty",
+  "sec-fetch-mode": "cors",
+  "sec-fetch-site": "same-origin",
+  Referer: "https://www.mon-marche.fr/",
+};
 
 /** --- Fetch Wrapper --- **/
 const apiCall = async <T>({
@@ -35,7 +59,14 @@ const apiCall = async <T>({
   let session: string | undefined;
 
   if (!isLogin) {
-    session = JSON.parse(readFileSync(filePath, "utf-8")).session;
+    if (existsSync(filePath)) {
+      try {
+        const fileContent = readFileSync(filePath, "utf-8");
+        session = JSON.parse(fileContent).session;
+      } catch (e) {
+        console.error("Error reading session file:", e);
+      }
+    }
   }
 
   const cookie = !isLogin && session ? `session=${session};` : "";
@@ -43,21 +74,8 @@ const apiCall = async <T>({
   try {
     const response = await fetch(`${apiUrl}${endpoint}`, {
       headers: {
-        accept: "*/*",
-        "accept-language": "fr,it;q=0.9,en;q=0.8",
-        "cache-control": "no-cache",
-        "content-type": "application/json",
-        pragma: "no-cache",
-        priority: "u=1, i",
-        "sec-ch-ua":
-          '"Google Chrome";v="141", "Not?A_Brand";v="8", "Chromium";v="141"',
-        "sec-ch-ua-mobile": "?0",
-        "sec-ch-ua-platform": '"macOS"',
-        "sec-fetch-dest": "empty",
-        "sec-fetch-mode": "cors",
-        "sec-fetch-site": "same-origin",
+        ...DEFAULT_HEADERS,
         cookie,
-        Referer: "https://www.mon-marche.fr/",
       },
       body,
       method,
@@ -74,7 +92,8 @@ const apiCall = async <T>({
           const session = sessionCookie.split(";")[0].replace("session=", "");
           const newCookies = { session };
 
-          console.log(newCookies);
+          // Removed console.log to avoid breaking MCP protocol
+          // console.log(newCookies);
 
           writeFileSync(filePath, JSON.stringify(newCookies, null, 2), "utf-8");
         }
@@ -95,11 +114,11 @@ export const loginSession = async () => {
   const password = process.env.MON_MARCHE_PASSWORD;
 
   if (!email || !password) {
-    return { error: "Email or password not set" };
+    throw new Error("Email or password not set in environment variables");
   }
 
   try {
-    const loginResponse = await apiCall<any>({
+    const loginResponse = await apiCall<LoginResponse>({
       endpoint: "/auth/signin",
       body: `{"email":"${email}","password":"${password}"}`,
       method: "POST",
@@ -107,19 +126,20 @@ export const loginSession = async () => {
     });
 
     if (loginResponse.error) {
-      return { error: loginResponse.error, message: loginResponse.message };
+      throw new Error(loginResponse.message || loginResponse.error);
     }
 
     return { status: "Login OK" };
   } catch (error) {
-    return { error: "Error logging in" };
+    // Re-throw the error so the caller handles it
+    throw error;
   }
 };
 
 /** --- Search products --- **/
 export const searchProducts = async (product: string) => {
   if (!existsSync(filePath)) {
-    return { error: "You have to log in first" };
+    throw new Error("You have to log in first");
   }
 
   const productsResponse = await apiCall<ProductSearchResponse>({
@@ -129,7 +149,7 @@ export const searchProducts = async (product: string) => {
     method: "GET",
   });
   if (!productsResponse) {
-    throw new Error(`Failed to search products: ${productsResponse}`);
+    throw new Error(`Failed to search products`);
   }
   const items = productsResponse.items.filter(
     (item) => item.availableQuantity > 0
@@ -180,7 +200,7 @@ export const addProduct = async ({
   quantity: number;
 }) => {
   if (!existsSync(filePath)) {
-    return { error: "You have to log in first" };
+    throw new Error("You have to log in first");
   }
 
   const addProductResponse = await apiCall<AddToCartResponse>({
@@ -189,7 +209,7 @@ export const addProduct = async ({
     method: "PATCH",
   });
   if (!addProductResponse) {
-    throw new Error(`Failed to add product: ${addProductResponse}`);
+    throw new Error(`Failed to add product`);
   }
   return addProductResponse;
 };
@@ -197,7 +217,7 @@ export const addProduct = async ({
 /** --- Cart list --- **/
 export const getCartList = async () => {
   if (!existsSync(filePath)) {
-    return { error: "You have to log in first" };
+    throw new Error("You have to log in first");
   }
 
   const cartResponse = await apiCall<CartResponse>({
@@ -206,7 +226,7 @@ export const getCartList = async () => {
   });
 
   if (!cartResponse) {
-    throw new Error(`Failed to get cart: ${cartResponse}`);
+    throw new Error(`Failed to get cart`);
   }
   return cartResponse.products.map((product) => ({
     name: product.name,
@@ -222,7 +242,7 @@ export const getCartList = async () => {
 /** --- Clear cart --- **/
 export const clearCart = async () => {
   if (!existsSync(filePath)) {
-    return { error: "You have to log in first" };
+    throw new Error("You have to log in first");
   }
 
   const clearCartResponse = await apiCall<CartResponse>({
@@ -231,7 +251,7 @@ export const clearCart = async () => {
   });
 
   if (!clearCartResponse) {
-    throw new Error(`Failed to clear cart: ${clearCartResponse}`);
+    throw new Error(`Failed to clear cart`);
   }
   return { status: "Cart cleared" };
 };
