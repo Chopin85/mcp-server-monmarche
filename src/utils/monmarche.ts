@@ -120,7 +120,7 @@ export const loginSession = async () => {
   try {
     const loginResponse = await apiCall<LoginResponse>({
       endpoint: "/auth/signin",
-      body: `{"email":"${email}","password":"${password}"}`,
+      body: JSON.stringify({ email, password }),
       method: "POST",
       isLogin: true,
     });
@@ -205,7 +205,7 @@ export const addProduct = async ({
 
   const addProductResponse = await apiCall<AddToCartResponse>({
     endpoint: "/cart/product",
-    body: `{"product":{"id":"${id}","quantity":${quantity}}}`,
+      body: JSON.stringify({ product: { id, quantity } }),
     method: "PATCH",
   });
   if (!addProductResponse) {
