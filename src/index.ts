@@ -8,48 +8,27 @@ import {
   clearCart,
 } from "./utils/monmarche.js";
 
-// Create an MCP server
 const server = new McpServer({
   name: "monmarche-server",
   version: "1.0.0",
 });
 
-// Tool searchProduct
-server.registerTool(
+server.tool(
   "searchProduct",
+  "Search for a product on Mon Marché",
   {
-    title: "Search Product",
-    description: "Search for a product on Mon Marché",
-    inputSchema: {
-      query: z.object({
-        name: z
-          .string()
-          .min(1)
-          .max(100)
-          .describe("Name of the product to search"),
-      }),
-    },
+    name: z.string().min(1).max(100).describe("Name of the product to search"),
   },
-  async ({ query }) => {
+  async ({ name }) => {
     try {
-      const args = z
-        .object({
-          name: z
-            .string()
-            .min(1)
-            .max(100)
-            .describe("Name of the product to search"),
-        })
-        .parse(query);
-
-      const products = await searchProducts(args.name);
+      const products = await searchProducts(name);
 
       if (!Array.isArray(products) || products.length === 0) {
         return {
           content: [
             {
               type: "text",
-              text: `No products found matching "${args.name}". Try a different search term.`,
+              text: `No products found matching "${name}". Try a different search term.`,
             },
           ],
         };
@@ -83,31 +62,28 @@ server.registerTool(
   }
 );
 
-// Tool addProduct
-server.registerTool(
+server.tool(
   "addProduct",
+  "Add a product to the Mon Marché shopping cart",
   {
-    title: "Add Product",
-    description: "Add a product to the Mon Marché shopping cart",
-    inputSchema: {
-      product: z.object({
-        id: z.string().describe("ID of the product to add"),
-        quantity: z.number().min(1).describe("Quantity of the product to add"),
-      }),
-    },
+    id: z.string().describe("ID of the product to add"),
+    quantity: z.number().min(1).describe("Quantity of the product to add"),
   },
-  async ({ product }) => {
-    const { id, quantity } = z
-      .object({
-        id: z.string().describe("ID of the product to add"),
-        quantity: z.number().min(1).describe("Quantity of the product to add"),
-      })
-      .parse(product);
-
+  async ({ id, quantity }) => {
     try {
       await addProduct({ id, quantity });
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Product added to cart: ${JSON.stringify({ id, quantity })}`,
+          },
+        ],
+      };
     } catch (error) {
       console.error("Error adding product:", error);
+
       return {
         isError: true,
         content: [
@@ -120,27 +96,13 @@ server.registerTool(
         ],
       };
     }
-
-    return {
-      content: [
-        {
-          type: "text",
-          text: `Product added to cart: ${JSON.stringify(product)}`,
-        },
-      ],
-    };
   }
 );
 
-// Tool getCartList
-server.registerTool(
+server.tool(
   "getCartList",
-  {
-    title: "Get Cart List",
-    description:
-      "Retrieve the list of products in the Mon Marché shopping cart",
-    inputSchema: {},
-  },
+  "Retrieve the list of products in the Mon Marché shopping cart",
+  {},
   async () => {
     try {
       const cartItems = await getCartList();
@@ -182,23 +144,19 @@ server.registerTool(
   }
 );
 
-// Tool clearCart
-server.registerTool(
+server.tool(
   "clearCart",
-  {
-    title: "Clear Cart",
-    description: "Clear all products from the Mon Marché shopping cart",
-    inputSchema: {},
-  },
+  "Clear all products from the Mon Marché shopping cart",
+  {},
   async () => {
     try {
-      const result = await clearCart();
+      await clearCart();
 
       return {
         content: [
           {
             type: "text",
-            text: `Shopping cart cleared.`,
+            text: "Shopping cart cleared.",
           },
         ],
       };
@@ -223,7 +181,7 @@ server.registerTool(
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("✅ MCP server running on stdio");
+  console.error("MCP server running on stdio");
 }
 
 main().catch((e) => {
