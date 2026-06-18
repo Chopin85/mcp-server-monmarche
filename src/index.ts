@@ -105,7 +105,7 @@ server.registerTool(
       .parse(product);
 
     try {
-      const result = await addProduct({ id, quantity });
+      await addProduct({ id, quantity });
     } catch (error) {
       console.error("Error adding product:", error);
       return {

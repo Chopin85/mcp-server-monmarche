@@ -22,8 +22,6 @@ dotenv.config({ path: path.resolve(rootDir, ".env"), quiet: true });
 // regardless of where the script is run from
 const filePath = path.resolve(rootDir, "session-cookie.json");
 
-console.log(filePath);
-
 /** --- API URL --- **/
 const apiUrl = "https://www.mon-marche.fr/api";
 
