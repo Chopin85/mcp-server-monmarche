@@ -16,13 +16,25 @@ const commands = {
 const cmd = process.argv[2] as keyof typeof commands;
 
 function parseArgs(argv: string[]) {
-  const args: Record<string, string> = {};
-  for (let i = 0; i < argv.length; i += 2) {
-    const key = argv[i].replace(/^--/, "");
-    const value = argv[i + 1];
-    args[key] = value;
+  const named: Record<string, string> = {};
+  const positional: string[] = [];
+
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i].startsWith("--")) {
+      const key = argv[i].replace(/^--/, "");
+      const value = argv[i + 1];
+      if (value && !value.startsWith("--")) {
+        named[key] = value;
+        i++;
+      } else {
+        named[key] = "true";
+      }
+    } else {
+      positional.push(argv[i]);
+    }
   }
-  return args;
+
+  return { named, positional };
 }
 
 (async () => {
@@ -33,25 +45,28 @@ function parseArgs(argv: string[]) {
       process.exit(1);
     }
 
+    const { named, positional } = parseArgs(process.argv.slice(3));
+    const session = named["session"];
+
     let result;
 
-    if (
-      cmd === "loginSession" ||
-      cmd === "searchProducts" ||
-      cmd === "getCartList" ||
-      cmd === "clearCart"
-    ) {
-      const arg = process.argv[3];
-      result = await commands[cmd](arg);
+    if (cmd === "loginSession") {
+      result = await loginSession();
+    } else if (cmd === "searchProducts") {
+      const product = positional[0] || "";
+      result = await searchProducts(product, session);
+    } else if (cmd === "getCartList") {
+      result = await getCartList(session);
+    } else if (cmd === "clearCart") {
+      result = await clearCart(session);
     } else if (cmd === "addProduct") {
-      const args = parseArgs(process.argv.slice(3));
-      const id = args["id"];
-      const quantity = parseInt(args["quantity"], 10);
+      const id = named["id"];
+      const quantity = parseInt(named["quantity"], 10);
       if (!id || isNaN(quantity)) {
         console.error("Missing or invalid --id or --quantity");
         process.exit(1);
       }
-      result = await commands[cmd]({ id, quantity });
+      result = await addProduct({ id, quantity, session });
     }
 
     console.log(result);

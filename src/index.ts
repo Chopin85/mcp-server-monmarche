@@ -18,10 +18,11 @@ server.tool(
   "Search for a product on Mon Marché",
   {
     name: z.string().min(1).max(100).describe("Name of the product to search"),
+    session: z.string().optional().describe("Session cookie (optional)"),
   },
-  async ({ name }) => {
+  async ({ name, session }) => {
     try {
-      const products = await searchProducts(name);
+      const products = await searchProducts(name, session);
 
       if (!Array.isArray(products) || products.length === 0) {
         return {
@@ -68,10 +69,11 @@ server.tool(
   {
     id: z.string().describe("ID of the product to add"),
     quantity: z.number().min(1).describe("Quantity of the product to add"),
+    session: z.string().optional().describe("Session cookie (optional)"),
   },
-  async ({ id, quantity }) => {
+  async ({ id, quantity, session }) => {
     try {
-      await addProduct({ id, quantity });
+      await addProduct({ id, quantity, session });
 
       return {
         content: [
@@ -102,10 +104,12 @@ server.tool(
 server.tool(
   "getCartList",
   "Retrieve the list of products in the Mon Marché shopping cart",
-  {},
-  async () => {
+  {
+    session: z.string().optional().describe("Session cookie (optional)"),
+  },
+  async ({ session }) => {
     try {
-      const cartItems = await getCartList();
+      const cartItems = await getCartList(session);
 
       if (!Array.isArray(cartItems) || cartItems.length === 0) {
         return {
@@ -147,10 +151,12 @@ server.tool(
 server.tool(
   "clearCart",
   "Clear all products from the Mon Marché shopping cart",
-  {},
-  async () => {
+  {
+    session: z.string().optional().describe("Session cookie (optional)"),
+  },
+  async ({ session }) => {
     try {
-      await clearCart();
+      await clearCart(session);
 
       return {
         content: [

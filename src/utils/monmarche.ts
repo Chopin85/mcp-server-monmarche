@@ -48,16 +48,20 @@ const apiCall = async <T>({
   body,
   method,
   isLogin = false,
+  session: explicitSession,
 }: {
   endpoint: string;
   body?: string;
   method: "GET" | "POST" | "PATCH" | "DELETE";
   isLogin?: boolean;
+  session?: string;
 }): Promise<T> => {
   let session: string | undefined;
 
   if (!isLogin) {
-    if (existsSync(filePath)) {
+    if (explicitSession) {
+      session = explicitSession;
+    } else if (existsSync(filePath)) {
       try {
         const fileContent = readFileSync(filePath, "utf-8");
         session = JSON.parse(fileContent).session;
@@ -135,8 +139,8 @@ export const loginSession = async () => {
 };
 
 /** --- Search products --- **/
-export const searchProducts = async (product: string) => {
-  if (!existsSync(filePath)) {
+export const searchProducts = async (product: string, session?: string) => {
+  if (!session && !existsSync(filePath)) {
     throw new Error("You have to log in first");
   }
 
@@ -145,6 +149,7 @@ export const searchProducts = async (product: string) => {
       product
     )}&modelVersion=ordinal_df`,
     method: "GET",
+    session,
   });
   if (!productsResponse) {
     throw new Error(`Failed to search products`);
@@ -158,6 +163,7 @@ export const searchProducts = async (product: string) => {
       const res = await apiCall<ArticleDetailResponse>({
         endpoint: `/articleDetailBySlug/${item.slug}`,
         method: "GET",
+        session,
       });
 
       const name = res.name || null;
@@ -193,11 +199,13 @@ export const searchProducts = async (product: string) => {
 export const addProduct = async ({
   id,
   quantity,
+  session,
 }: {
   id: string;
   quantity: number;
+  session?: string;
 }) => {
-  if (!existsSync(filePath)) {
+  if (!session && !existsSync(filePath)) {
     throw new Error("You have to log in first");
   }
 
@@ -205,6 +213,7 @@ export const addProduct = async ({
     endpoint: "/cart/product",
       body: JSON.stringify({ product: { id, quantity } }),
     method: "PATCH",
+    session,
   });
   if (!addProductResponse) {
     throw new Error(`Failed to add product`);
@@ -213,14 +222,15 @@ export const addProduct = async ({
 };
 
 /** --- Cart list --- **/
-export const getCartList = async () => {
-  if (!existsSync(filePath)) {
+export const getCartList = async (session?: string) => {
+  if (!session && !existsSync(filePath)) {
     throw new Error("You have to log in first");
   }
 
   const cartResponse = await apiCall<CartResponse>({
     endpoint: "/cart",
     method: "GET",
+    session,
   });
 
   if (!cartResponse) {
@@ -238,14 +248,15 @@ export const getCartList = async () => {
 };
 
 /** --- Clear cart --- **/
-export const clearCart = async () => {
-  if (!existsSync(filePath)) {
+export const clearCart = async (session?: string) => {
+  if (!session && !existsSync(filePath)) {
     throw new Error("You have to log in first");
   }
 
   const clearCartResponse = await apiCall<CartResponse>({
     endpoint: "/cart",
     method: "DELETE",
+    session,
   });
 
   if (!clearCartResponse) {

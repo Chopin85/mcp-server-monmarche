@@ -9,7 +9,7 @@ A Model Context Protocol (MCP) server that connects LLMs to the [Mon Marché](ht
   - Add items to cart.
   - View current cart contents.
   - Clear the entire cart.
-- **Session Handling**: Automated login and session persistence via cookies.
+- **Session Handling**: Automated login and session persistence via cookies. Supports explicit `--session` flag for scripted/headless use.
 
 ## Prerequisites
 
@@ -79,12 +79,53 @@ npx @modelcontextprotocol/inspector node dist/index.js
 
 ### CLI Tools
 
-The project includes helper scripts to run tools directly from the command line for testing or automation:
+The project includes helper scripts to run tools directly from the command line for testing or automation.
 
-- **Search**: `npm run searchProducts "pomme"`
-- **Add to Cart**: `npm run addProduct -- --id <PRODUCT_ID> --quantity <QTY>`
-- **View Cart**: `npm run getCartList`
-- **Clear Cart**: `npm run clearCart`
+All commands support an optional `--session` flag to use an explicit session token instead of `session-cookie.json`:
+
+```bash
+node dist/utils/cli.js <command> [args...] [--session <token>]
+```
+
+- **Search**:
+  ```bash
+  npm run searchProducts "pomme"
+  ```
+- **Add to Cart**:
+  ```bash
+  npm run addProduct -- --id <PRODUCT_ID> --quantity <QTY>
+  ```
+- **View Cart**:
+  ```bash
+  npm run getCartList
+  ```
+- **Clear Cart**:
+  ```bash
+  npm run clearCart
+  ```
+
+#### Using `--session` (explicit token)
+
+Pass a session token directly to skip the `session-cookie.json` file:
+
+```bash
+# Direct node usage
+node dist/utils/cli.js searchProducts "pasta" --session "abc123"
+node dist/utils/cli.js getCartList --session "abc123"
+node dist/utils/cli.js addProduct --id "123" --quantity 2 --session "abc123"
+node dist/utils/cli.js clearCart --session "abc123"
+```
+
+```bash
+# Via npm scripts (with -- separator)
+npm run searchProducts -- "pasta" --session "abc123"
+npm run getCartList -- --session "abc123"
+npm run addProduct -- --id "123" --quantity 2 --session "abc123"
+npm run clearCart -- --session "abc123"
+```
+
+> [!NOTE]
+> When `--session` is provided, the `session-cookie.json` file is ignored for that call.
 
 ## Available Tools
 
@@ -92,28 +133,31 @@ The server exposes the following tools to MCP clients:
 
 ### `searchProduct`
 Searches for products on Mon Marché.
-- **Input**: `{ "query": { "name": "string" } }`
+- **Input**: `{ "name": "string", "session?": "string" }`
 - **Returns**: List of matching products with IDs and details.
 
 ### `addProduct`
 Adds a specific product to the cart.
-- **Input**: `{ "product": { "id": "string", "quantity": number } }`
+- **Input**: `{ "id": "string", "quantity": number, "session?": "string" }`
 - **Returns**: Confirmation of addition.
 
 ### `getCartList`
 Retrieves the current contents of the shopping cart.
-- **Input**: `{}` (No input required)
+- **Input**: `{ "session?": "string" }`
 - **Returns**: List of items in the cart.
 
 ### `clearCart`
 Removes all items from the shopping cart.
-- **Input**: `{}` (No input required)
+- **Input**: `{ "session?": "string" }`
 - **Returns**: Confirmation message.
+
+> [!NOTE]
+> All tools accept an optional `session` parameter. If omitted, the session is read from `session-cookie.json`.
 
 ## Troubleshooting
 
 - **Login Failed**: Ensure your email and password in `.env` are correct.
-- **Session Errors**: If tools return authentication errors, run `npm run login` to refresh your session cookies.
+- **Session Errors**: If tools return authentication errors, run `npm run login` to refresh your session cookies, or pass a valid token via `--session`.
 - **Build Errors**: Make sure all dependencies are installed with `npm install`.
 
 ## License
